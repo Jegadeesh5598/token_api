@@ -149,6 +149,7 @@ app.get('/entries', async (req, res) => {
     if (error) throw error;
 
     res.json(data);
+    console.log(data,"+++++++")
 
   } catch (err) {
     console.log("🔥 ERROR:", err.message);
@@ -252,7 +253,8 @@ app.put('/update-entry/:id', async (req, res) => {
         no_of_non_voters,
         no_of_total_peoples,
         phone_number,
-        admin
+        admin,
+        updated_at: new Date().toISOString()
       })
       .eq('id', id);
 
