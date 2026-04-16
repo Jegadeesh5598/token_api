@@ -39,83 +39,102 @@ app.post('/add-entry', async (req, res) => {
   } = req.body;
 
   try {
-    const inputSerials = parseSerials(serial_number);
+    // ✅ 1. Mandatory Fields (ONLY THESE TWO)
+    if (!token_number || !phone_number) {
+      return res.status(400).json({
+        message: "token_number and phone_number are required"
+      });
+    }
 
-    // 🔴 1. TOKEN NUMBER UNIQUE
+    const inputSerials = serial_number
+      ? serial_number.split(',').map(s => s.trim()).filter(Boolean)
+      : [];
+
+    // ✅ 2. TOKEN UNIQUE CHECK
     const { data: tokenData } = await supabase
       .from('ration_entries')
       .select('*')
       .eq('token_number', token_number);
 
     if (tokenData.length > 0) {
-      console.log("❌ Token already used");
-
       return res.status(400).json({
         message: "This token is already distributed"
       });
     }
 
-    // 🔴 2. RATION CARD UNIQUE
-    const { data: rationData } = await supabase
-      .from('ration_entries')
-      .select('*')
-      .eq('ration_card_number', ration_card_number);
+    // ✅ 3. RATION UNIQUE CHECK (ONLY IF PROVIDED)
+    if (ration_card_number) {
+      const { data: rationData } = await supabase
+        .from('ration_entries')
+        .select('*')
+        .eq('ration_card_number', ration_card_number);
 
-    if (rationData.length > 0) {
-      console.log("❌ Ration duplicate");
-
-      return res.status(400).json({
-        message: `This ration card is mapped with serial ${rationData[0].serial_number} and token ${rationData[0].token_number}`
-      });
+      if (rationData.length > 0) {
+        return res.status(400).json({
+          message: `This ration card is mapped with serial ${rationData[0].serial_number} and token ${rationData[0].token_number}`
+        });
+      }
     }
 
-    // 🔴 3. SERIAL COUNT VALIDATION
-    if (inputSerials.length !== Number(no_of_voters)) {
-      return res.status(400).json({
-        message: `Serial count (${inputSerials.length}) must match no_of_voters (${no_of_voters})`
-      });
+    // ✅ 4. SERIAL COUNT VALIDATION (ONLY IF PROVIDED)
+    if (serial_number && no_of_voters) {
+      if (inputSerials.length !== Number(no_of_voters)) {
+        return res.status(400).json({
+          message: `Serial count (${inputSerials.length}) must match no_of_voters (${no_of_voters})`
+        });
+      }
     }
 
-    if (Number(no_of_total_peoples) !== Number(no_of_voters) + Number(no_of_non_voters)) {
-      return res.status(400).json({
-        message: "Total peoples must be voters + non_voters"
-      });
+    // ✅ 5. TOTAL PEOPLE VALIDATION (ONLY IF PROVIDED)
+    if (
+      no_of_total_peoples !== undefined &&
+      no_of_voters !== undefined &&
+      no_of_non_voters !== undefined
+    ) {
+      if (
+        Number(no_of_total_peoples) !==
+        Number(no_of_voters) + Number(no_of_non_voters)
+      ) {
+        return res.status(400).json({
+          message: "Total peoples must be voters + non_voters"
+        });
+      }
     }
 
-    // 🔴 4. SERIAL DUPLICATION CHECK
-    const { data: allData } = await supabase
-      .from('ration_entries')
-      .select('*');
+    // ✅ 6. SERIAL DUPLICATE CHECK (ONLY IF PROVIDED)
+    if (serial_number) {
+      const { data: allData } = await supabase
+        .from('ration_entries')
+        .select('*');
 
-    for (let row of allData) {
-      const dbSerials = parseSerials(row.serial_number);
+      for (let row of allData) {
+        const dbSerials = row.serial_number
+          ? row.serial_number.split(',').map(s => s.trim())
+          : [];
 
-      for (let serial of inputSerials) {
-        if (dbSerials.includes(serial)) {
-          console.log("❌ Serial duplicate:", serial);
-
-          return res.status(400).json({
-            message: `This SerialNumber ${serial} is already mapped with ration ${row.ration_card_number} and token ${row.token_number}`
-          });
+        for (let serial of inputSerials) {
+          if (dbSerials.includes(serial)) {
+            return res.status(400).json({
+              message: `This SerialNumber ${serial} is already mapped with ration ${row.ration_card_number} and token ${row.token_number}`
+            });
+          }
         }
       }
     }
 
-    // ✅ INSERT
-    console.log("✅ Inserting...");
-
+    // ✅ 7. INSERT DATA
     const { data, error } = await supabase
       .from('ration_entries')
       .insert([{
-        s_no,
-        serial_number,
+        s_no: s_no || null,
+        serial_number: serial_number || null,
         token_number,
-        ration_card_number,
-        no_of_voters,
-        no_of_non_voters,
-        no_of_total_peoples,
+        ration_card_number: ration_card_number || null,
+        no_of_voters: no_of_voters || null,
+        no_of_non_voters: no_of_non_voters || null,
+        no_of_total_peoples: no_of_total_peoples || null,
         phone_number,
-        admin
+        admin: admin || null
       }]);
 
     if (error) throw error;
@@ -149,7 +168,7 @@ app.get('/entries', async (req, res) => {
     if (error) throw error;
 
     res.json(data);
-    console.log(data,"+++++++")
+    console.log(data, "+++++++")
 
   } catch (err) {
     console.log("🔥 ERROR:", err.message);
@@ -167,6 +186,7 @@ app.put('/update-entry/:id', async (req, res) => {
   const { id } = req.params;
 
   console.log("✏️ Update ID:", id);
+  console.log("📥 Incoming:", req.body);
 
   const {
     s_no,
@@ -181,9 +201,18 @@ app.put('/update-entry/:id', async (req, res) => {
   } = req.body;
 
   try {
-    const inputSerials = parseSerials(serial_number);
+    // ✅ 1. Mandatory Fields (ONLY THESE TWO)
+    if (!token_number || !phone_number) {
+      return res.status(400).json({
+        message: "token_number and phone_number are required"
+      });
+    }
 
-    // 🔴 TOKEN CHECK (exclude current)
+    const inputSerials = serial_number
+      ? serial_number.split(',').map(s => s.trim()).filter(Boolean)
+      : [];
+
+    // ✅ 2. TOKEN UNIQUE CHECK (exclude current record)
     const { data: tokenData } = await supabase
       .from('ration_entries')
       .select('*')
@@ -196,71 +225,95 @@ app.put('/update-entry/:id', async (req, res) => {
       });
     }
 
-    // 🔴 RATION CHECK
-    const { data: rationData } = await supabase
-      .from('ration_entries')
-      .select('*')
-      .eq('ration_card_number', ration_card_number)
-      .neq('id', id);
+    // ✅ 3. RATION UNIQUE CHECK (ONLY IF PROVIDED)
+    if (ration_card_number) {
+      const { data: rationData } = await supabase
+        .from('ration_entries')
+        .select('*')
+        .eq('ration_card_number', ration_card_number)
+        .neq('id', id);
 
-    if (rationData.length > 0) {
-      return res.status(400).json({
-        message: "Ration card already exists"
-      });
+      if (rationData.length > 0) {
+        return res.status(400).json({
+          message: "Ration card already exists"
+        });
+      }
     }
 
-    // 🔴 SERIAL COUNT
-    if (inputSerials.length !== Number(no_of_voters)) {
-      return res.status(400).json({
-        message: "Serial count mismatch"
-      });
+    // ✅ 4. SERIAL COUNT VALIDATION (ONLY IF PROVIDED)
+    if (serial_number && no_of_voters) {
+      if (inputSerials.length !== Number(no_of_voters)) {
+        return res.status(400).json({
+          message: `Serial count (${inputSerials.length}) must match no_of_voters (${no_of_voters})`
+        });
+      }
     }
 
-    if (Number(no_of_total_peoples) !== Number(no_of_voters) + Number(no_of_non_voters)) {
-      return res.status(400).json({
-        message: "Total peoples mismatch"
-      });
+    // ✅ 5. TOTAL PEOPLE VALIDATION (ONLY IF PROVIDED)
+    if (
+      no_of_total_peoples !== undefined &&
+      no_of_voters !== undefined &&
+      no_of_non_voters !== undefined
+    ) {
+      if (
+        Number(no_of_total_peoples) !==
+        Number(no_of_voters) + Number(no_of_non_voters)
+      ) {
+        return res.status(400).json({
+          message: "Total peoples must be voters + non_voters"
+        });
+      }
     }
 
-    // 🔴 SERIAL DUPLICATE
-    const { data: allData } = await supabase
-      .from('ration_entries')
-      .select('*');
+    // ✅ 6. SERIAL DUPLICATE CHECK (ONLY IF PROVIDED)
+    if (serial_number) {
+      const { data: allData } = await supabase
+        .from('ration_entries')
+        .select('*');
 
-    for (let row of allData) {
-      if (row.id === id) continue;
+      for (let row of allData) {
+        if (row.id === id) continue;
 
-      const dbSerials = parseSerials(row.serial_number);
+        const dbSerials = row.serial_number
+          ? row.serial_number.split(',').map(s => s.trim())
+          : [];
 
-      for (let serial of inputSerials) {
-        if (dbSerials.includes(serial)) {
-          return res.status(400).json({
-            message: `Serial ${serial} already mapped with ration ${row.ration_card_number}`
-          });
+        for (let serial of inputSerials) {
+          if (dbSerials.includes(serial)) {
+            return res.status(400).json({
+              message: `Serial ${serial} already mapped with ration ${row.ration_card_number}`
+            });
+          }
         }
       }
     }
 
-    // ✅ UPDATE
+    // ✅ 7. UPDATE DATA (only update provided fields)
+    const updatePayload = {
+      updated_at: new Date().toISOString()
+    };
+
+    if (s_no !== undefined) updatePayload.s_no = s_no;
+    if (serial_number !== undefined) updatePayload.serial_number = serial_number;
+    if (token_number !== undefined) updatePayload.token_number = token_number;
+    if (ration_card_number !== undefined) updatePayload.ration_card_number = ration_card_number;
+    if (no_of_voters !== undefined) updatePayload.no_of_voters = no_of_voters;
+    if (no_of_non_voters !== undefined) updatePayload.no_of_non_voters = no_of_non_voters;
+    if (no_of_total_peoples !== undefined) updatePayload.no_of_total_peoples = no_of_total_peoples;
+    if (phone_number !== undefined) updatePayload.phone_number = phone_number;
+    if (admin !== undefined) updatePayload.admin = admin;
+
     const { data, error } = await supabase
       .from('ration_entries')
-      .update({
-        s_no,
-        serial_number,
-        token_number,
-        ration_card_number,
-        no_of_voters,
-        no_of_non_voters,
-        no_of_total_peoples,
-        phone_number,
-        admin,
-        updated_at: new Date().toISOString()
-      })
+      .update(updatePayload)
       .eq('id', id);
 
     if (error) throw error;
 
-    res.json({ message: "Updated successfully", data });
+    res.json({
+      message: "Updated successfully",
+      data
+    });
 
   } catch (err) {
     console.log("🔥 ERROR:", err.message);
